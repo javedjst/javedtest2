@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { Anthropic } from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { randomToken } from '../security/crypto.js';
@@ -24,7 +24,7 @@ async function ask(system: string, user: string, maxTokens = 1200): Promise<stri
     system: `${system}\n\n${UNTRUSTED_NOTICE}`,
     messages: [{ role: 'user', content: user }],
   });
-  return res.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+  return res.content.map((b: { type: string; text?: string }) => (b.type === 'text' ? (b.text ?? '') : '')).join('');
 }
 
 function parseJson<T>(raw: string, schema: z.ZodType<T>): T {
