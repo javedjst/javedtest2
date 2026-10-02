@@ -1,0 +1,44 @@
+# Local stack: Postgres (with pgvector), one-shot migration, API, web.
+#   cp .env.example .env && docker compose up --build
+# Then seed demo data once:  docker compose run --rm migrate npm run seed -w apps/api
+name: ai-work-hub
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aiworkhub
+    ports: ["5432:5432"]
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aiworkhub"]
+      interval: 3s
+      retries: 20
+
+  migrate:
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: build }
+    command: npm run migrate -w apps/api
+    environment:
+      MIGRATION_DATABASE_URL: postgres://postgres:postgres@db:5432/aiworkhub
+    depends_on: { db: { condition: service_healthy } }
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://aiwork_app:aiwork_app_dev@db:5432/aiworkhub
+      MIGRATION_DATABASE_URL: postgres://postgres:postgres@db:5432/aiworkhub
+      NODE_ENV: development
+    ports: ["4000:4000"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  dbdata:
