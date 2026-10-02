@@ -1,0 +1,10 @@
+# DOMAIN is a hostname (automatic HTTPS) or ":80" (plain HTTP, for testing by IP).
+{$DOMAIN} {
+	# Demo sign-in is open to anyone who reaches the API, so gate the whole site.
+	# Remove this block only after real SSO exists and DEV_AUTH is false.
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+	encode gzip
+	reverse_proxy web:3000
+}

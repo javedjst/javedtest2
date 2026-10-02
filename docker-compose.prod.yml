@@ -1,0 +1,66 @@
+# Single VM deployment: Caddy (HTTPS) -> web -> api -> Postgres. Only Caddy is exposed.
+#   cp .env.prod.example .env && edit it
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml run --rm migrate npm run seed -w apps/api   # demo data, optional
+name: ai-work-hub
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: aiworkhub
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aiworkhub"]
+      interval: 5s
+      retries: 20
+
+  migrate:
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: build }
+    command: npm run migrate -w apps/api
+    environment:
+      MIGRATION_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/aiworkhub
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    depends_on: { db: { condition: service_healthy } }
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DEV_AUTH: ${DEV_AUTH:-true}
+      PORT: "4000"
+      DATABASE_URL: postgres://aiwork_app:${APP_DB_PASSWORD}@db:5432/aiworkhub
+      MIGRATION_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/aiworkhub
+      MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY}
+      WEB_ORIGIN: ${PUBLIC_URL:?set PUBLIC_URL}
+      API_PUBLIC_URL: ${PUBLIC_URL}/api
+      AI_PROVIDER: ${AI_PROVIDER:-auto}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile, args: { API_INTERNAL_URL: "http://api:4000" } }
+    restart: unless-stopped
+    depends_on: [api]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:-:80}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?set BASIC_AUTH_USER}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?set BASIC_AUTH_HASH}
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddydata:/data]
+    depends_on: [web]
+
+volumes:
+  dbdata:
+  caddydata:

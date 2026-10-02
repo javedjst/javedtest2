@@ -23,5 +23,10 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
     throw e;
   }
 }
+// The migration creates the app role with a development password. Set a real one when provided.
+if (process.env.APP_DB_PASSWORD) {
+  await client.query(`ALTER ROLE aiwork_app PASSWORD ${pg.escapeLiteral(process.env.APP_DB_PASSWORD)}`);
+  console.log('app role password updated');
+}
 await client.end();
 console.log('migrations up to date');
